@@ -1,0 +1,824 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>메이플 청기백기 게임 DX</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.3.1/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/pose@0.8/dist/teachablemachine-pose.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Jua&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Jua', sans-serif;
+            background: linear-gradient(180deg, #6dd5fa 0%, #2980b9 100%);
+            background-attachment: fixed;
+            overflow-x: hidden;
+            user-select: none;
+            touch-action: manipulation;
+        }
+
+        .maple-bg {
+            background-image: url("data:image/svg+xml,%3Csvg width='100' height='20' viewBox='0 0 100 20' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M21.184 20c.357-.13.72-.264 1.088-.402l1.768-.661C33.64 15.347 39.647 14 50 14c10.271 0 15.362 1.222 24.629 4.928.955.383 1.869.74 2.75 1.072h6.225c-2.51-.73-5.139-1.691-8.233-2.928C65.888 12.327 63.794 10 50 10c-13.893 0-16.272 2.752-26.328 7.29-3.693 1.668-6.696 2.593-9.52 3.097L11.396 20H21.184z' fill='%23ffffff' fill-opacity='0.2' fill-rule='evenodd'/%3E%3C/svg%3E");
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            z-index: -1;
+            pointer-events: none;
+        }
+
+        .grass-floor {
+            position: fixed;
+            bottom: 0; left: 0; width: 100%; height: 80px;
+            background: linear-gradient(0deg, #56ab2f 0%, #a8e063 100%);
+            border-top: 5px solid #438a20;
+            z-index: -1;
+        }
+
+        .game-container {
+            position: relative;
+            border: 8px solid #3c3c3c;
+            border-radius: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            background: #222;
+            overflow: hidden;
+            width: 100%;
+            max-width: 800px; /* PC에서 너무 커지지 않도록 제한 */
+            aspect-ratio: 4/3; /* 기본 비율 */
+        }
+
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transform: scaleX(-1);
+        }
+
+        /* UI Elements */
+        .overlay-text {
+            text-shadow: 3px 3px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, 2px 2px 0 #000;
+        }
+        
+        .score-board {
+            background: rgba(0,0,0,0.8);
+            border: 3px solid #ffd700;
+            border-radius: 15px;
+            padding: 0.5rem 1rem;
+            color: #ffd700;
+            box-shadow: 0 4px 0 #b8860b;
+            min-width: 100px;
+            text-align: center;
+        }
+
+        .maple-btn {
+            background: linear-gradient(to bottom, #feca57, #ff9f43);
+            border: 3px solid #fff;
+            box-shadow: 0 6px 0 #e67e22, 0 10px 10px rgba(0,0,0,0.2);
+            text-shadow: 1px 1px 0 rgba(0,0,0,0.2);
+            transition: all 0.1s;
+        }
+        .maple-btn:active {
+            transform: translateY(6px);
+            box-shadow: 0 0 0 #e67e22;
+        }
+        
+        .maple-btn.danger {
+            background: linear-gradient(to bottom, #ff6b6b, #ee5253);
+            box-shadow: 0 6px 0 #c0392b;
+            border-color: #fff;
+        }
+        .maple-btn.danger:active {
+            box-shadow: 0 0 0 #c0392b;
+        }
+
+        .maple-btn.secondary {
+            background: linear-gradient(to bottom, #bdc3c7, #95a5a6);
+            box-shadow: 0 6px 0 #7f8c8d;
+        }
+        .maple-btn.secondary:active {
+            box-shadow: 0 0 0 #7f8c8d;
+        }
+
+        /* Animations */
+        .popup-message {
+            animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+        @keyframes popIn {
+            0% { transform: scale(0) rotate(-10deg); opacity: 0; }
+            100% { transform: scale(1) rotate(0deg); opacity: 1; }
+        }
+
+        .correct-anim { animation: bounce 0.5s; color: #00ff00; }
+        .wrong-anim { animation: shake 0.5s; color: #ff0000; }
+        
+        @keyframes bounce { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-20px); } }
+        @keyframes shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-10px); } 75% { transform: translateX(10px); } }
+
+        .time-bar { transition: width 0.1s linear; }
+
+        /* Settings Toggle Button Styles */
+        .setting-btn {
+            padding: 0.5rem 1rem;
+            border-radius: 0.5rem;
+            font-weight: bold;
+            transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            border-width: 3px;
+            font-size: 1rem;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
+            white-space: nowrap;
+        }
+        
+        .setting-btn.active {
+            background: linear-gradient(to bottom, #f1c40f, #f39c12);
+            border-color: #ffffff;
+            color: #000000;
+            text-shadow: none;
+            transform: scale(1.1);
+            box-shadow: 0 0 15px rgba(241, 196, 15, 0.6), inset 0 2px 0 rgba(255,255,255,0.4);
+            font-weight: 900;
+            z-index: 10;
+        }
+        
+        .setting-btn.inactive {
+            background: rgba(0, 0, 0, 0.5);
+            border-color: #576574;
+            color: #bdc3c7;
+        }
+        .setting-btn.inactive:hover {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: #ecf0f1;
+            color: #fff;
+        }
+        
+        .menu-box {
+            background: #2c3e50;
+            border: 4px solid #f1c40f;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+            color: white;
+        }
+
+        .ai-avatar {
+            transition: transform 0.3s;
+        }
+        .ai-thinking { animation: pulse 1s infinite; }
+        .ai-correct { transform: scale(1.2) rotate(10deg); filter: brightness(1.2); }
+        .ai-wrong { transform: scale(0.9) rotate(-10deg); filter: grayscale(1); }
+        
+        /* 2P Split Line */
+        .split-line {
+            position: absolute;
+            top: 0; bottom: 0; left: 50%;
+            width: 4px;
+            background: rgba(255,255,255,0.3);
+            border-left: 1px dashed rgba(0,0,0,0.5);
+            transform: translateX(-50%);
+            z-index: 5;
+            display: none;
+        }
+
+        /* Responsive Text */
+        @media (max-width: 640px) {
+            .score-board { padding: 0.3rem 0.5rem; font-size: 0.9rem; min-width: auto; }
+            .score-num { font-size: 1.5rem; }
+            h1 { font-size: 2rem; }
+        }
+    </style>
+</head>
+<body class="flex flex-col items-center justify-center min-h-screen pb-4 overflow-hidden">
+
+    <div class="maple-bg"></div>
+    <div class="grass-floor"></div>
+
+    <!-- Header -->
+    <header class="w-full text-center py-4 z-10 shrink-0">
+        <h1 class="text-3xl md:text-5xl font-bold text-white overlay-text tracking-widest inline-block transform -rotate-2 cursor-pointer" onclick="goToMenu()">
+            <span class="text-blue-400">청기</span><span class="text-white">백기</span> 챌린지 DX
+        </h1>
+    </header>
+
+    <!-- Main Content Area -->
+    <main class="w-full p-2 flex flex-col items-center z-10 grow justify-center">
+        
+        <!-- Score Board -->
+        <div id="scoreboard-container" class="w-full max-w-3xl flex justify-between items-center mb-2 px-2 hidden">
+            <!-- P1 Score -->
+            <div class="score-board flex flex-col items-center">
+                <span class="text-white text-xs md:text-sm" id="p1-label">PLAYER 1</span>
+                <span id="p1-score" class="score-num text-2xl md:text-3xl text-yellow-400 font-bold">0</span>
+            </div>
+
+            <!-- Game Timer -->
+            <div class="bg-black/80 border-2 border-white rounded-full px-4 py-1 text-white text-lg md:text-xl shadow-lg flex items-center gap-2">
+                <span>⏰</span> <span id="game-timer">00</span>
+            </div>
+
+            <!-- Opponent Score -->
+            <div id="opponent-score-box" class="score-board flex flex-col items-center hidden">
+                <span class="text-white text-xs md:text-sm" id="p2-label">CPU</span>
+                <span id="p2-score" class="score-num text-2xl md:text-3xl text-red-400 font-bold">0</span>
+            </div>
+        </div>
+
+        <!-- Game Container -->
+        <div class="game-container relative bg-black">
+            
+            <!-- Video Canvas -->
+            <canvas id="canvas"></canvas>
+            
+            <!-- 2P Split Line -->
+            <div id="split-divider" class="split-line"></div>
+            
+            <!-- AI Avatar Overlay (Only for VS AI) -->
+            <div id="ai-overlay" class="absolute right-2 bottom-2 w-24 h-24 md:w-32 md:h-32 hidden z-10">
+                <div class="relative w-full h-full">
+                    <div id="ai-char" class="ai-avatar w-full h-full bg-orange-500 rounded-t-full rounded-b-xl border-4 border-white shadow-lg flex items-center justify-center">
+                        <div class="text-4xl">🍄</div>
+                    </div>
+                    <div id="ai-bubble" class="absolute -top-10 -left-10 bg-white text-black p-2 rounded-lg text-xs font-bold opacity-0 transition-opacity whitespace-nowrap border-2 border-black">
+                        내 차례다!
+                    </div>
+                </div>
+            </div>
+
+            <!-- Overlay: Loading -->
+            <div id="loading-overlay" class="absolute inset-0 flex flex-col items-center justify-center bg-slate-900 text-white z-50">
+                <div class="text-6xl mb-4 animate-spin">🍁</div>
+                <div class="text-2xl font-bold">로딩중...</div>
+            </div>
+
+            <!-- Overlay: Menu & Settings -->
+            <div id="menu-overlay" class="absolute inset-0 flex flex-col items-center justify-center bg-black/60 z-40 hidden backdrop-blur-sm p-4">
+                <div class="menu-box p-6 md:p-8 rounded-2xl w-full max-w-md text-center">
+                    <h2 class="text-3xl md:text-4xl text-yellow-400 font-bold mb-6 overlay-text drop-shadow-xl">게임 설정</h2>
+                    
+                    <!-- Mode Selection -->
+                    <div class="mb-4">
+                        <p class="text-white font-bold mb-2 text-lg drop-shadow-md">🎮 게임 모드</p>
+                        <div class="flex gap-2 justify-center flex-wrap">
+                            <button onclick="setMode('solo')" id="btn-mode-solo" class="setting-btn active">혼자하기</button>
+                            <button onclick="setMode('ai')" id="btn-mode-ai" class="setting-btn inactive">AI 대결</button>
+                            <button onclick="setMode('2p')" id="btn-mode-2p" class="setting-btn inactive">2인 대결</button>
+                        </div>
+                    </div>
+
+                    <!-- Difficulty -->
+                    <div class="mb-4">
+                        <p class="text-white font-bold mb-2 text-lg drop-shadow-md">🔥 난이도</p>
+                        <div class="flex gap-2 justify-center flex-wrap">
+                            <button onclick="setDiff('easy')" id="btn-diff-easy" class="setting-btn inactive">쉬움</button>
+                            <button onclick="setDiff('normal')" id="btn-diff-normal" class="setting-btn active">보통</button>
+                            <button onclick="setDiff('hard')" id="btn-diff-hard" class="setting-btn inactive">어려움</button>
+                        </div>
+                    </div>
+
+                    <!-- Time -->
+                    <div class="mb-6">
+                        <p class="text-white font-bold mb-2 text-lg drop-shadow-md">⏳ 제한 시간</p>
+                        <div class="flex gap-2 justify-center">
+                            <button onclick="setTime(30)" id="btn-time-30" class="setting-btn inactive">30초</button>
+                            <button onclick="setTime(60)" id="btn-time-60" class="setting-btn active">60초</button>
+                        </div>
+                    </div>
+
+                    <button onclick="startGame()" class="maple-btn px-8 py-3 rounded-full text-xl md:text-2xl font-bold text-white w-full transform hover:scale-105 transition-transform shadow-xl">
+                        게임 시작!
+                    </button>
+                </div>
+            </div>
+
+            <!-- Overlay: Game UI (Active during game) -->
+            <div id="game-ui" class="absolute inset-0 hidden flex flex-col justify-between p-4 z-30">
+                
+                <!-- Stop Button -->
+                <div class="absolute top-2 right-2 z-50 pointer-events-auto">
+                    <button onclick="goToMenu()" class="maple-btn danger px-3 py-1.5 rounded-lg text-white font-bold text-xs md:text-sm shadow-lg flex items-center gap-2 hover:scale-105 transition-transform">
+                        <i class="fas fa-times"></i> 나가기
+                    </button>
+                </div>
+
+                <!-- Command Text -->
+                <div class="flex justify-center mt-8 md:mt-12 pointer-events-none w-full">
+                    <div id="command-text" class="text-4xl md:text-6xl font-bold text-white overlay-text drop-shadow-xl popup-message text-center w-full">
+                        준비...
+                    </div>
+                </div>
+
+                <!-- Result Marks Area -->
+                <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
+                    <!-- Solo/AI Center Mark -->
+                    <div id="result-mark" class="text-8xl md:text-9xl font-bold overlay-text opacity-0 transform scale-0 transition-all duration-300"></div>
+                    
+                    <!-- 2P Marks -->
+                    <div id="p1-result-mark" class="absolute left-1/4 transform -translate-x-1/2 text-7xl md:text-8xl font-bold overlay-text opacity-0 scale-0 transition-all duration-300 hidden"></div>
+                    <div id="p2-result-mark" class="absolute right-1/4 transform translate-x-1/2 text-7xl md:text-8xl font-bold overlay-text opacity-0 scale-0 transition-all duration-300 hidden"></div>
+                </div>
+
+                <!-- Bottom Timer Bar (Round Timer) -->
+                <div class="w-full bg-gray-800 h-6 md:h-8 rounded-full border-4 border-gray-600 overflow-hidden mt-auto mb-1 shadow-xl pointer-events-none">
+                    <div id="round-timer-bar" class="h-full bg-gradient-to-r from-yellow-400 to-orange-500 time-bar w-full"></div>
+                </div>
+            </div>
+
+            <!-- Overlay: Game Over -->
+            <div id="result-overlay" class="absolute inset-0 flex flex-col items-center justify-center bg-black/90 z-50 hidden p-4">
+                <h2 class="text-4xl md:text-5xl text-yellow-400 font-bold mb-4 overlay-text">게임 종료!</h2>
+                <div id="final-result-text" class="text-white text-lg md:text-2xl mb-8 text-center leading-loose font-bold drop-shadow-md">
+                    <!-- Result inserted here -->
+                </div>
+                <div class="flex gap-4">
+                    <button onclick="goToMenu()" class="maple-btn secondary px-6 py-3 rounded-xl text-white font-bold text-lg hover:scale-105 transition-transform">메뉴로</button>
+                    <button onclick="startGame()" class="maple-btn px-8 py-3 rounded-xl text-white font-bold text-lg hover:scale-105 transition-transform">다시 하기</button>
+                </div>
+            </div>
+
+        </div>
+
+    </main>
+
+    <script type="text/javascript">
+        const URL = "https://teachablemachine.withgoogle.com/models/JJgh55Ga-/";
+        
+        let model, webcam, ctx, maxPredictions;
+        let isModelLoaded = false;
+        
+        // Offscreen Canvases for 2P mode
+        let p1Canvas, p1Ctx;
+        let p2Canvas, p2Ctx;
+
+        // Game State
+        let gameState = {
+            isPlaying: false,
+            mode: 'solo', // solo, ai, 2p
+            difficulty: 'normal',
+            timeLimit: 60,
+            scoreP1: 0,
+            scoreP2: 0, 
+            timeLeft: 0,
+            currentCommand: null,
+        };
+
+        let roundTimer = null;
+        let gameLoopTimer = null;
+        
+        const WEBCAM_SIZE = 600;
+        const ROUND_TIME = 2000; 
+        const WAIT_TIME = 1500;
+        
+        let CLASS_BLUE = 0;
+        let CLASS_WHITE = 1;
+        let CLASS_WAIT = 2;
+
+        async function init() {
+            try {
+                const modelURL = URL + "model.json";
+                const metadataURL = URL + "metadata.json";
+                model = await tmPose.load(modelURL, metadataURL);
+                maxPredictions = model.getTotalClasses();
+
+                const labels = model.getClassLabels();
+                for(let i=0; i<maxPredictions; i++) {
+                    const l = labels[i].toLowerCase();
+                    if(l.includes("left") || l.includes("왼") || l.includes("blue")) CLASS_BLUE = i;
+                    if(l.includes("right") || l.includes("오른") || l.includes("white")) CLASS_WHITE = i;
+                    if(l.includes("stand") || l.includes("rest") || l.includes("대기")) CLASS_WAIT = i;
+                }
+
+                const size = WEBCAM_SIZE;
+                const flip = true; 
+                webcam = new tmPose.Webcam(size, size, flip); 
+                await webcam.setup();
+                await webcam.play();
+                
+                const canvas = document.getElementById("canvas");
+                canvas.width = size; canvas.height = size;
+                ctx = canvas.getContext("2d");
+
+                // Initialize Offscreen Canvases for 2P Split
+                p1Canvas = document.createElement('canvas');
+                p1Canvas.width = size / 2;
+                p1Canvas.height = size;
+                p1Ctx = p1Canvas.getContext('2d');
+
+                p2Canvas = document.createElement('canvas');
+                p2Canvas.width = size / 2;
+                p2Canvas.height = size;
+                p2Ctx = p2Canvas.getContext('2d');
+                
+                window.requestAnimationFrame(loop);
+
+                document.getElementById("loading-overlay").classList.add("hidden");
+                goToMenu();
+                isModelLoaded = true;
+
+            } catch (error) {
+                console.error(error);
+                document.getElementById("loading-overlay").innerHTML = `<div class='text-red-500 text-center p-4 font-bold'>오류 발생!<br>${error.message}<br>카메라 권한을 확인해주세요.</div>`;
+            }
+        }
+
+        async function loop() {
+            webcam.update(); 
+            // Draw main view
+            ctx.drawImage(webcam.canvas, 0, 0);
+            
+            if(isModelLoaded && gameState.isPlaying) {
+                if(gameState.mode === '2p') {
+                    // Split Screen Logic for 2P
+                    // Webcam is flipped by default in tmPose.Webcam if flip=true
+                    // So Left side of canvas is Player 1, Right side is Player 2
+                    
+                    // 1. Draw P1 (Left Half)
+                    p1Ctx.drawImage(webcam.canvas, 0, 0, WEBCAM_SIZE/2, WEBCAM_SIZE, 0, 0, WEBCAM_SIZE/2, WEBCAM_SIZE);
+                    
+                    // 2. Draw P2 (Right Half)
+                    p2Ctx.drawImage(webcam.canvas, WEBCAM_SIZE/2, 0, WEBCAM_SIZE/2, WEBCAM_SIZE, 0, 0, WEBCAM_SIZE/2, WEBCAM_SIZE);
+
+                    // 3. Estimate Both (Simultaneous)
+                    // Note: feeding half-width canvas to estimatePose might squash pose, but usually robust enough for simple up/down
+                    const { pose: pose1, posenetOutput: out1 } = await model.estimatePose(p1Canvas);
+                    const { pose: pose2, posenetOutput: out2 } = await model.estimatePose(p2Canvas);
+                    
+                    const pred1 = await model.predict(out1);
+                    const pred2 = await model.predict(out2);
+
+                    // Draw Skeletons with offset
+                    if (pose1) {
+                        tmPose.drawKeypoints(pose1.keypoints, 0.5, ctx); // Draw on left half directly?
+                        // Actually tmPose draws relative to canvas size. P1 is fine on 0,0
+                        // Need to verify if tmPose drawing assumes full canvas? 
+                        // We are drawing onto 'ctx' which is full size.
+                        // But pose1 coordinates are relative to p1Canvas (half width).
+                        // So they will draw on the left side correctly.
+                        tmPose.drawSkeleton(pose1.keypoints, 0.5, ctx);
+                    }
+                    if (pose2) {
+                        // Pose2 coordinates are relative to p2Canvas (0 to 300).
+                        // We need to shift them by 300 to draw on right side of main ctx.
+                        ctx.save();
+                        ctx.translate(WEBCAM_SIZE/2, 0);
+                        tmPose.drawKeypoints(pose2.keypoints, 0.5, ctx);
+                        tmPose.drawSkeleton(pose2.keypoints, 0.5, ctx);
+                        ctx.restore();
+                    }
+
+                    if(gameState.currentCommand) {
+                        checkGameplaySplit(pred1, pred2);
+                    }
+
+                } else {
+                    // Solo / AI Logic
+                    const { pose, posenetOutput } = await model.estimatePose(webcam.canvas);
+                    const prediction = await model.predict(posenetOutput);
+                    
+                    if (pose) {
+                        tmPose.drawKeypoints(pose.keypoints, 0.5, ctx);
+                        tmPose.drawSkeleton(pose.keypoints, 0.5, ctx);
+                    }
+
+                    if(gameState.currentCommand) {
+                        checkGameplaySolo(prediction);
+                    }
+                }
+            }
+            window.requestAnimationFrame(loop);
+        }
+
+        // --- UI & Menu Functions ---
+
+        function goToMenu() {
+            gameState.isPlaying = false;
+            if (roundTimer) clearTimeout(roundTimer);
+            if (gameLoopTimer) clearInterval(gameLoopTimer);
+
+            document.getElementById("menu-overlay").classList.remove("hidden");
+            document.getElementById("game-ui").classList.add("hidden");
+            document.getElementById("result-overlay").classList.add("hidden");
+            document.getElementById("scoreboard-container").classList.add("hidden");
+            document.getElementById("ai-overlay").classList.add("hidden");
+            document.getElementById("split-divider").style.display = "none";
+
+            updateMenuUI();
+        }
+
+        function setMode(mode) {
+            gameState.mode = mode;
+            updateMenuUI();
+        }
+        function setDiff(diff) {
+            gameState.difficulty = diff;
+            updateMenuUI();
+        }
+        function setTime(time) {
+            gameState.timeLimit = time;
+            updateMenuUI();
+        }
+
+        function updateMenuUI() {
+            ['solo', 'ai', '2p'].forEach(m => {
+                const btn = document.getElementById(`btn-mode-${m}`);
+                btn.className = gameState.mode === m ? 'setting-btn active' : 'setting-btn inactive';
+            });
+            ['easy', 'normal', 'hard'].forEach(d => {
+                const btn = document.getElementById(`btn-diff-${d}`);
+                btn.className = gameState.difficulty === d ? 'setting-btn active' : 'setting-btn inactive';
+            });
+            [30, 60].forEach(t => {
+                const btn = document.getElementById(`btn-time-${t}`);
+                btn.className = gameState.timeLimit === t ? 'setting-btn active' : 'setting-btn inactive';
+            });
+        }
+
+        // --- Game Logic ---
+
+        function startGame() {
+            if(!isModelLoaded) return;
+            
+            gameState.scoreP1 = 0;
+            gameState.scoreP2 = 0;
+            gameState.timeLeft = gameState.timeLimit;
+            gameState.isPlaying = true;
+            
+            // UI Setup
+            document.getElementById("menu-overlay").classList.add("hidden");
+            document.getElementById("result-overlay").classList.add("hidden");
+            document.getElementById("game-ui").classList.remove("hidden");
+            document.getElementById("scoreboard-container").classList.remove("hidden");
+            
+            updateScoreUI();
+            
+            const opponentBox = document.getElementById("opponent-score-box");
+            const aiOverlay = document.getElementById("ai-overlay");
+            const splitDivider = document.getElementById("split-divider");
+            
+            // Marks reset
+            document.getElementById("result-mark").classList.add("hidden");
+            document.getElementById("p1-result-mark").classList.add("hidden");
+            document.getElementById("p2-result-mark").classList.add("hidden");
+
+            opponentBox.classList.add("hidden");
+            aiOverlay.classList.add("hidden");
+            splitDivider.style.display = "none";
+            
+            // Labels Reset
+            document.getElementById("p1-label").innerText = "PLAYER";
+
+            if (gameState.mode === 'ai') {
+                opponentBox.classList.remove("hidden");
+                document.getElementById("p2-label").innerText = "버섯 AI";
+                aiOverlay.classList.remove("hidden");
+            } else if (gameState.mode === '2p') {
+                opponentBox.classList.remove("hidden");
+                document.getElementById("p1-label").innerText = "PLAYER 1";
+                document.getElementById("p2-label").innerText = "PLAYER 2";
+                splitDivider.style.display = "block"; // Show divider
+            } else {
+                 // Solo
+                 document.getElementById("p1-label").innerText = "PLAYER";
+            }
+
+            startGlobalTimer();
+            nextRound();
+        }
+
+        function startGlobalTimer() {
+            if (gameLoopTimer) clearInterval(gameLoopTimer);
+            updateTimerUI();
+            gameLoopTimer = setInterval(() => {
+                if(!gameState.isPlaying) {
+                    clearInterval(gameLoopTimer);
+                    return;
+                }
+                gameState.timeLeft--;
+                updateTimerUI();
+                if(gameState.timeLeft <= 0) {
+                    finishGame();
+                }
+            }, 1000);
+        }
+
+        function finishGame() {
+            gameState.isPlaying = false;
+            clearInterval(gameLoopTimer);
+            if(roundTimer) clearTimeout(roundTimer);
+
+            let resultHTML = "";
+            const s1 = gameState.scoreP1;
+            const s2 = gameState.scoreP2;
+
+            if (gameState.mode === 'solo') {
+                resultHTML = `최종 점수: <span class="text-yellow-400 font-bold">${s1}점</span>`;
+            } else if (gameState.mode === 'ai') {
+                resultHTML = `내 점수: ${s1} <br> AI 점수: ${s2} <br><br>`;
+                if (s1 > s2) resultHTML += "<span class='text-green-400 font-bold'>🎉 당신의 승리!</span>";
+                else if (s1 < s2) resultHTML += "<span class='text-red-400 font-bold'>💀 AI 승리!</span>";
+                else resultHTML += "<span class='text-gray-400 font-bold'>무승부!</span>";
+            } else if (gameState.mode === '2p') {
+                resultHTML = `P1: ${s1}점 &nbsp; vs &nbsp; P2: ${s2}점<br><br>`;
+                if (s1 > s2) resultHTML += "<span class='text-blue-400 font-bold'>🎉 PLAYER 1 승리!</span>";
+                else if (s1 < s2) resultHTML += "<span class='text-red-400 font-bold'>🎉 PLAYER 2 승리!</span>";
+                else resultHTML += "<span class='text-gray-400 font-bold'>무승부!</span>";
+            }
+
+            document.getElementById("final-result-text").innerHTML = resultHTML;
+            document.getElementById("result-overlay").classList.remove("hidden");
+            document.getElementById("game-ui").classList.add("hidden");
+        }
+
+        function nextRound() {
+            if(!gameState.isPlaying || gameState.timeLeft <= 0) return;
+
+            hideResult();
+            
+            if(gameState.mode === 'ai') {
+                document.getElementById('ai-char').className = "ai-avatar w-full h-full bg-orange-500 rounded-t-full rounded-b-xl border-4 border-white shadow-lg flex items-center justify-center ai-thinking";
+                document.getElementById('ai-bubble').style.opacity = 0;
+            }
+
+            const rand = Math.random();
+            let commandText = "";
+            let commandColor = "";
+            
+            if (rand < 0.5) {
+                gameState.currentCommand = 'blue';
+                commandText = "🔵 청기 올려!";
+                commandColor = "text-blue-400";
+            } else {
+                gameState.currentCommand = 'white';
+                commandText = "⚪ 백기 올려!";
+                commandColor = "text-gray-200";
+            }
+
+            const cmdEl = document.getElementById("command-text");
+            cmdEl.className = `text-4xl md:text-6xl font-bold overlay-text drop-shadow-xl popup-message ${commandColor} text-center w-full`;
+            cmdEl.innerText = commandText;
+
+            const timerBar = document.getElementById("round-timer-bar");
+            timerBar.style.transition = 'none';
+            timerBar.style.width = '100%';
+            void timerBar.offsetWidth; 
+            
+            let currentRoundTime = ROUND_TIME;
+            if(gameState.difficulty === 'hard') currentRoundTime = 1500;
+            if(gameState.difficulty === 'easy') currentRoundTime = 2500;
+
+            timerBar.style.transition = `width ${currentRoundTime}ms linear`;
+            timerBar.style.width = '0%';
+
+            roundTimer = setTimeout(() => {
+                evaluateRound();
+            }, currentRoundTime);
+        }
+
+        // Caches for the evaluation moment
+        let predCacheSolo = null;
+        let predCacheP1 = null;
+        let predCacheP2 = null;
+
+        function checkGameplaySolo(prediction) { predCacheSolo = prediction; }
+        function checkGameplaySplit(p1, p2) { predCacheP1 = p1; predCacheP2 = p2; }
+
+        function evaluateRound() {
+            if(!gameState.isPlaying) return;
+            
+            let p1Success = false;
+            let p2Success = false;
+
+            // Logic for Solo / AI
+            if (gameState.mode !== '2p') {
+                if (predCacheSolo) {
+                    p1Success = checkSuccess(predCacheSolo);
+                }
+                if (p1Success) gameState.scoreP1 += 100;
+
+                // AI Logic
+                if (gameState.mode === 'ai') {
+                    let aiChance = 0.7;
+                    if(gameState.difficulty === 'easy') aiChance = 0.5;
+                    if(gameState.difficulty === 'hard') aiChance = 0.95;
+                    if(Math.random() < aiChance) {
+                        p2Success = true;
+                        gameState.scoreP2 += 100;
+                        showAIReaction(true);
+                    } else {
+                        showAIReaction(false);
+                    }
+                }
+                
+                showResult(p1Success); // Single center mark
+            } 
+            // Logic for 2P Simultaneous
+            else {
+                if (predCacheP1) p1Success = checkSuccess(predCacheP1);
+                if (predCacheP2) p2Success = checkSuccess(predCacheP2);
+
+                if (p1Success) gameState.scoreP1 += 100;
+                if (p2Success) gameState.scoreP2 += 100;
+
+                showResult2P(p1Success, p2Success);
+            }
+
+            updateScoreUI();
+
+            gameState.currentCommand = null;
+            setTimeout(nextRound, WAIT_TIME);
+        }
+
+        function checkSuccess(prediction) {
+            let userAction = 'wait';
+            const pBlue = prediction[CLASS_BLUE].probability;
+            const pWhite = prediction[CLASS_WHITE].probability;
+            
+            let threshold = 0.8;
+            if(gameState.difficulty === 'hard') threshold = 0.9;
+            if(gameState.difficulty === 'easy') threshold = 0.7;
+
+            if (pBlue > threshold) userAction = 'blue';
+            else if (pWhite > threshold) userAction = 'white';
+
+            if (gameState.currentCommand === 'blue' && userAction === 'blue') return true;
+            if (gameState.currentCommand === 'white' && userAction === 'white') return true;
+            return false;
+        }
+
+        function showResult(isSuccess) {
+            // Solo/AI Center Mark
+            const mark = document.getElementById("result-mark");
+            const p1m = document.getElementById("p1-result-mark");
+            const p2m = document.getElementById("p2-result-mark");
+            
+            // Hide 2P marks
+            p1m.classList.add("hidden");
+            p2m.classList.add("hidden");
+            mark.classList.remove("hidden");
+
+            animateMark(mark, isSuccess);
+            
+            const cmd = document.getElementById("command-text");
+            cmd.innerText = isSuccess ? "성공!" : "실패!";
+        }
+
+        function showResult2P(p1Ok, p2Ok) {
+            const mark = document.getElementById("result-mark");
+            const p1m = document.getElementById("p1-result-mark");
+            const p2m = document.getElementById("p2-result-mark");
+
+            // Hide center mark
+            mark.classList.add("hidden");
+            p1m.classList.remove("hidden");
+            p2m.classList.remove("hidden");
+
+            animateMark(p1m, p1Ok);
+            animateMark(p2m, p2Ok);
+            
+            document.getElementById("command-text").innerText = "판정 완료!";
+        }
+
+        function animateMark(el, isSuccess) {
+            el.classList.remove("opacity-0", "scale-0", "correct-anim", "wrong-anim", "text-green-500", "text-red-500");
+            if(isSuccess) {
+                el.innerText = "⭕";
+                el.classList.add("text-green-500", "correct-anim");
+            } else {
+                el.innerText = "❌";
+                el.classList.add("text-red-500", "wrong-anim");
+            }
+            el.classList.remove("opacity-0", "scale-0");
+        }
+
+        function hideResult() {
+            document.getElementById("result-mark").classList.add("opacity-0", "scale-0");
+            document.getElementById("p1-result-mark").classList.add("opacity-0", "scale-0");
+            document.getElementById("p2-result-mark").classList.add("opacity-0", "scale-0");
+        }
+
+        function showAIReaction(isSuccess) {
+            const aiChar = document.getElementById("ai-char");
+            const aiBubble = document.getElementById("ai-bubble");
+            aiChar.className = "ai-avatar w-full h-full bg-orange-500 rounded-t-full rounded-b-xl border-4 border-white shadow-lg flex items-center justify-center";
+            aiBubble.style.opacity = 1;
+
+            if(isSuccess) {
+                aiChar.classList.add("ai-correct");
+                aiBubble.innerText = "훗, 가볍군!";
+                aiBubble.className = "absolute -top-10 -left-10 bg-white text-blue-600 p-2 rounded-lg text-xs font-bold transition-opacity whitespace-nowrap shadow";
+            } else {
+                aiChar.classList.add("ai-wrong");
+                aiBubble.innerText = "앗, 실수!";
+                aiBubble.className = "absolute -top-10 -left-10 bg-gray-200 text-gray-500 p-2 rounded-lg text-xs font-bold transition-opacity whitespace-nowrap shadow";
+            }
+        }
+
+        function updateScoreUI() {
+            document.getElementById("p1-score").innerText = gameState.scoreP1;
+            document.getElementById("p2-score").innerText = gameState.scoreP2;
+        }
+
+        function updateTimerUI() {
+            document.getElementById("game-timer").innerText = gameState.timeLeft;
+        }
+
+        init();
+    </script>
+</body>
+</html>
